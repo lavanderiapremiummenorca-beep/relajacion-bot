@@ -1,0 +1,43 @@
+name: Publicar Short diario
+on:
+  schedule:
+    - cron: "51 20 * * *"     # ~22:51 Espana (UTC). Evita el minuto :00.
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  publicar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Instalar ffmpeg
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      - name: Instalar dependencias
+        run: pip install -r requirements.txt
+      - name: Generar el video del dia
+        env:
+          TTS_ENGINE: edge
+          EDGE_VOICE: es-ES-ElviraNeural
+          EDGE_RATE: "-8%"
+          CHANNEL_HANDLE: ${{ secrets.CHANNEL_HANDLE }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
+          PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
+        run: python generate.py
+      - name: Subir a YouTube
+        env:
+          YT_CLIENT_ID: ${{ secrets.YT_CLIENT_ID }}
+          YT_CLIENT_SECRET: ${{ secrets.YT_CLIENT_SECRET }}
+          YT_REFRESH_TOKEN: ${{ secrets.YT_REFRESH_TOKEN }}
+          YT_PRIVACY: public
+          YT_CATEGORY: "26"
+        run: python upload.py
+      - name: Guardar el video como artefacto
+        uses: actions/upload-artifact@v4
+        with:
+          name: video-del-dia
+          path: output/*.mp4
+          retention-days: 7
