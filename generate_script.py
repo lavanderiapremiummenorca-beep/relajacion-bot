@@ -16,56 +16,56 @@ _MODEL_CANDIDATES = [
 ]
 BGS = ["blue", "green", "orange", "purple", "teal", "red"]
 
-# Temas y formatos que rotan por dia para no repetir (anti "contenido inautentico")
+# ESCENAS nocturnas que rotan por dia (para que cada noche sea una imagen distinta)
 TEMAS = [
-    "la respiracion 4-7-8",
-    "la respiracion cuadrada",
-    "relajar los hombros y la mandibula",
-    "la tecnica 5-4-3-2-1",
-    "una rutina para dormir mejor",
-    "la luz azul y el sueno",
-    "el habito de la gratitud",
-    "la pausa consciente de un minuto",
-    "el escaneo corporal",
-    "caminar de forma consciente",
-    "desconectar del movil",
-    "como acompanar la ansiedad",
-    "alargar la exhalacion para calmarte",
-    "la temperatura ideal para dormir",
-    "soltar la tension del cuerpo",
-    "el poder de parar un momento",
-    "aceptar los pensamientos sin luchar",
-    "crear un rincon de calma",
-    "la respiracion antes de dormir",
-    "reducir el ritmo del dia"
+    "lluvia suave contra la ventana de noche",
+    "una vela encendida en una habitacion a oscuras",
+    "el mar en calma bajo la luna",
+    "un bosque con niebla al amanecer",
+    "una cabana de montana con la chimenea encendida",
+    "un cielo lleno de estrellas en el campo",
+    "un tren nocturno atravesando la noche",
+    "olas suaves rompiendo despacio en la orilla",
+    "un jardin en silencio al anochecer",
+    "la nieve cayendo despacio tras el cristal",
+    "una taza humeante junto a una ventana lluviosa",
+    "un lago quieto reflejando el atardecer",
+    "las hojas moviendose con el viento suave",
+    "una tormenta lejana con truenos suaves",
+    "la luz calida de una lampara al final del dia",
 ]
+# ESTILOS que se intercalan cada dia (experiencia, no tutorial)
 FORMATOS = [
-    "mito vs realidad", "un dato sorprendente con ejemplo numerico",
-    "el error comun que casi todos cometen", "top 3 rapido",
-    "esto no te lo cuentan", "comparativa antes vs despues",
-    "una pregunta que pica la curiosidad y su respuesta",
+    "experiencia inmersiva: describe una escena nocturna y guia al cuerpo a soltarse en ella",
+    "respiracion guiada real: dirige una respiracion (4-7-8, cuadrada o exhalacion larga) contando los tiempos con calma",
+    "sleep story: un micro-relato onirico en segunda persona que lleva poco a poco al sueno",
+    "ambiente: evoca un lugar para dormir o descansar y describelo con los cinco sentidos",
+    "reflexion para soltar el dia: una idea calmada sobre parar y permitirse descansar, sin dar consejos",
 ]
 
 SCHEMA_INSTRUCCION = """
 Devuelve UNICAMENTE un JSON valido (sin texto alrededor) con esta forma exacta:
 {
-  "title": "titulo honesto y con gancho, max 90 caracteres, puede llevar 1 emoji y #shorts",
-  "description": "1-2 frases de valor + CTA. Anade al final: 'Contenido de bienestar, no sustituye ayuda profesional.'",
-  "hashtags": ["Shorts", "relajacion", "bienestar", "calma"],  // 3 a 5, sin '#', el primero SIEMPRE 'Shorts'
-  "bg": "uno de: blue, green, orange, purple, teal, red",
-  "broll": "2-4 palabras EN INGLES para metraje de archivo (ej: 'calm nature water')",
+  "title": "titulo calmado y bonito, max 90 caracteres, puede llevar 1 emoji (luna o estrella) y #shorts",
+  "description": "1-2 frases suaves que inviten a parar un momento. Anade al final: 'Contenido de bienestar, no sustituye ayuda profesional.'",
+  "hashtags": ["Shorts", "relajacion", "calma", "dormir"],  // 3 a 5, sin '#', el primero SIEMPRE 'Shorts'
+  "bg": "uno de: blue, purple, teal, green (tonos nocturnos y suaves)",
+  "broll": "2-4 palabras EN INGLES de la escena nocturna (ej: 'rain window night')",
+  "broll_list": ["3 o 4 escenas EN INGLES para el fondo, en orden (ej: 'rain window night', 'candle flame dark', 'calm ocean moon')"],
   "ai_disclosure": false,
   "lines": [
-    {"voice": "frase corta que se narra (con numeros en palabras: 'cien euros', no '100')",
-     "cap": "subtitulo MUY corto en pantalla (2-4 palabras, puede llevar cifras)"}
+    {"voice": "frase corta y suave que se narra (numeros en palabras: 'cuatro', no '4')",
+     "cap": "subtitulo MUY corto en pantalla (2-4 palabras)"}
   ]
 }
-Reglas del guion:
-- Entre 10 y 13 lineas. Cada 'voice' es una frase corta y natural (el video debe durar 20-40 s).
-- La PRIMERA linea es el gancho: sin saludos ni intro, engancha en el primer segundo.
-- La ULTIMA linea es el CTA: invita a seguir ("Sigueme para tu momento de calma diario") o a comentar.
+Reglas del guion (formato 'Un minuto de calma'):
+- Entre 7 y 10 lineas. Cada 'voice' es una frase corta, lenta y sensorial (el video dura 30-45 s).
+- ESTO NO ES UN TUTORIAL: NO expliques, NO des consejos ni datos, NO uses 'sabias que', 'truco' ni 'top 3'. Se trata de CREAR una experiencia que el espectador VIVE, no de contarle un tema.
+- FIRMA DE APERTURA (linea 1, SIEMPRE): empieza con la palabra "Respira." y nombra 'tu minuto de calma'. Ej: "Respira. Este es tu minuto de calma." (puedes variar levemente, pero manten 'Respira' + 'tu minuto de calma').
+- FIRMA DE CIERRE (ultima linea, SIEMPRE): despidete con suavidad invitando a volver manana. Ej: "Buenas noches. Vuelve manana." (puedes variar levemente, pero manten la idea de despedida + volver manana).
+- Habla en segunda persona y en presente ("suelta los hombros", "escucha la lluvia"). Cercano, calido, sin prisa.
 - 'cap' nunca lleva emojis (la fuente no los dibuja). 'voice' escribe los numeros con letras.
-- Espanol, tono suave, calmado y pausado. Transmite paz, sin prisa.
+- Espanol de Espana, tono muy suave, pausado y envolvente; frases que respiran, con silencios implicitos.
 """
 
 def _run_seed():
@@ -169,13 +169,13 @@ def generate():
     seed = _run_seed()
     prompt = (master
               + f"\n\n---\nTAREA DE HOY ({hoy}):\n"
-              + "ELIGE TU MISMO un tema NUEVO, especifico y original dentro de la tematica "
-                "de ESTE canal (segun las instrucciones de arriba). Sorprendeme con un angulo "
-                "fresco y concreto; evita los topicos mas manidos y ya vistos.\n"
-              + (f"Para forzar variedad, HOY NO trates sobre estos (elige algo distinto): {evitar}.\n" if evitar else "")
-              + f"Desarrollalo con este enfoque/formato: {formato}.\n"
-              + "Debe ser un tema DISTINTO cada dia; se original.\n"
-              + "Cumple TODAS las reglas de arriba (cumplimiento primero, luego viralidad).\n"
+              + "CREA una experiencia de calma NUEVA y original para esta noche. "
+                "Elige tu misma una ESCENA nocturna concreta y sensorial (una imagen bonita, "
+                "no un tema de consejo).\n"
+              + (f"Para forzar variedad, esta noche NO uses estas escenas (elige otra distinta): {evitar}.\n" if evitar else "")
+              + f"Trabaja la experiencia con este ESTILO de hoy: {formato}.\n"
+              + "El estilo se intercala cada dia; hoy toca EXACTAMENTE el de arriba.\n"
+              + "Manten SIEMPRE la firma de apertura y de cierre. Nada de tutoriales ni consejos.\n"
               + SCHEMA_INSTRUCCION)
     try:
         raw = _call_gemini(prompt, key)
