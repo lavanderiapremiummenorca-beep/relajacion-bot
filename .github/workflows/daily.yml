@@ -19,7 +19,10 @@ jobs:
         run: pip install -r requirements.txt
       - name: Generar el video del dia
         env:
-          TTS_ENGINE: edge
+          TTS_ENGINE: eleven
+          ELEVENLABS_API_KEY: ${{ secrets.ELEVENLABS_API_KEY }}
+          ELEVEN_VOICE_ID: "1CeqBeXMOqCleeQjfYfO"
+          ELEVEN_MODEL: eleven_flash_v2_5
           EDGE_VOICE: es-ES-ElviraNeural
           EDGE_RATE: "-8%"
           CHANNEL_HANDLE: ${{ secrets.CHANNEL_HANDLE }}
