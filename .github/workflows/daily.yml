@@ -23,6 +23,7 @@ jobs:
           ELEVENLABS_API_KEY: ${{ secrets.ELEVENLABS_API_KEY }}
           ELEVEN_VOICE_ID: "1CeqBeXMOqCleeQjfYfO"
           ELEVEN_MODEL: eleven_flash_v2_5
+          VOICE_VOL: "0.8"
           EDGE_VOICE: es-ES-ElviraNeural
           EDGE_RATE: "-8%"
           CHANNEL_HANDLE: ${{ secrets.CHANNEL_HANDLE }}
