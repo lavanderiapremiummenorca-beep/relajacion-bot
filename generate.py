@@ -24,6 +24,7 @@ EDGE_VOICE = os.environ.get("EDGE_VOICE", "es-ES-AlvaroNeural")
 GAP = 0.07          # (ya no se usa; voz continua)
 FONT = "DejaVu Sans"
 HANDLE = os.environ.get("CHANNEL_HANDLE", "").strip()  # tu marca en pantalla (vacío = sin marca)
+VOICE_VOL = os.environ.get("VOICE_VOL", "1.0")  # volumen de la voz: 1.0 = normal; 0.8 = más bajo/tranquilo
 
 def run(cmd):
     r = subprocess.run(cmd, capture_output=True, text=True)
@@ -165,7 +166,9 @@ def synth_full(text, out_wav):
     return synth_edge_full(text, out_wav)
 
 def synth(text, out_wav):
-    if TTS_ENGINE == "edge":
+    # 'eleven' usa la locucion premium en build_audio; si por lo que sea se llega
+    # aqui (reparto frase a frase), usamos edge (existe en el runner), NUNCA espeak.
+    if TTS_ENGINE in ("edge", "eleven"):
         synth_edge(text, out_wav)
     else:
         synth_espeak(text, out_wav)
@@ -567,13 +570,13 @@ def build_video(script, out_path, workdir):
     # la cola y TODO se funde suavemente al final (nada de corte en seco).
     if music_file:
         ai_mus = ai_voice + 1
-        fc += (f";[{ai_voice}:a]loudnorm=I=-16:TP=-1.5:LRA=11,apad=whole_dur={final_dur:.2f}[vo];"
+        fc += (f";[{ai_voice}:a]loudnorm=I=-16:TP=-1.5:LRA=11,volume={VOICE_VOL},apad=whole_dur={final_dur:.2f}[vo];"
                f"[{ai_mus}:a]volume=0.09[mu];"
                f"[vo][mu]amix=inputs=2:duration=first:dropout_transition=0:normalize=0,"
                f"afade=t=out:st={total:.2f}:d={TAIL:.2f}[a]")
         amap = "[a]"
     else:
-        fc += (f";[{ai_voice}:a]loudnorm=I=-16:TP=-1.5:LRA=11,apad=whole_dur={final_dur:.2f},"
+        fc += (f";[{ai_voice}:a]loudnorm=I=-16:TP=-1.5:LRA=11,volume={VOICE_VOL},apad=whole_dur={final_dur:.2f},"
                f"afade=t=out:st={total:.2f}:d={TAIL:.2f}[a]")
         amap = "[a]"
 
