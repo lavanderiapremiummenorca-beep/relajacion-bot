@@ -93,6 +93,77 @@ def synth_edge_full(text, out_wav):
     os.remove(tmp_mp3)
     return words
 
+def synth_eleven_full(text, out_wav):
+    """Locucion premium con ElevenLabs + tiempos por palabra (endpoint
+    with-timestamps). Devuelve lista [(inicio_s, duracion_s, palabra), ...],
+    EXACTAMENTE el mismo formato que synth_edge_full, para que los subtitulos
+    palabra por palabra sigan sincronizados sin tocar el resto del codigo."""
+    import base64
+    key = os.environ.get("ELEVENLABS_API_KEY", "").strip()
+    voice = os.environ.get("ELEVEN_VOICE_ID", "").strip()
+    if not key:
+        raise RuntimeError("falta ELEVENLABS_API_KEY")
+    if not voice:
+        raise RuntimeError("falta ELEVEN_VOICE_ID")
+    model = os.environ.get("ELEVEN_MODEL", "eleven_flash_v2_5")
+    fmt = os.environ.get("ELEVEN_FORMAT", "mp3_44100_128")
+    payload = {"text": text, "model_id": model}
+    lang = os.environ.get("ELEVEN_LANG", "").strip()      # opcional: "es" fuerza idioma
+    if lang:
+        payload["language_code"] = lang
+    url = ("https://api.elevenlabs.io/v1/text-to-speech/"
+           + voice + "/with-timestamps?output_format=" + fmt)
+    req = urllib.request.Request(url, data=json.dumps(payload).encode("utf-8"),
+                                 headers={"xi-api-key": key,
+                                          "Content-Type": "application/json",
+                                          "Accept": "application/json"})
+    with urllib.request.urlopen(req, timeout=90) as r:
+        data = json.loads(r.read().decode("utf-8"))
+    b64 = data.get("audio_base64") or data.get("audio")
+    if not b64:
+        raise RuntimeError("respuesta de ElevenLabs sin audio")
+    tmp_mp3 = out_wav + ".mp3"
+    with open(tmp_mp3, "wb") as f:
+        f.write(base64.b64decode(b64))
+    run(["ffmpeg","-y","-loglevel","error","-i",tmp_mp3,"-ar","44100","-ac","2",out_wav])
+    os.remove(tmp_mp3)
+    # Reconstruye tiempos por PALABRA a partir del alineado por CARACTER
+    al = data.get("alignment") or data.get("normalized_alignment") or {}
+    chars = al.get("characters") or []
+    starts = al.get("character_start_times_seconds") or []
+    ends = al.get("character_end_times_seconds") or []
+    words = []
+    cur = ""; w_start = None; w_end = 0.0
+    for i, ch in enumerate(chars):
+        st = starts[i] if i < len(starts) else w_end
+        en = ends[i] if i < len(ends) else st
+        if ch.isspace():
+            if cur:
+                s0 = w_start if w_start is not None else 0.0
+                words.append((s0, max(0.01, w_end - s0), cur)); cur = ""; w_start = None
+        else:
+            if w_start is None:
+                w_start = st
+            cur += ch; w_end = en
+    if cur:
+        s0 = w_start if w_start is not None else 0.0
+        words.append((s0, max(0.01, w_end - s0), cur))
+    return words
+
+def synth_full(text, out_wav):
+    """Locucion completa de una vez + tiempos de palabra. Usa ElevenLabs si
+    esta configurado (TTS_ENGINE=eleven y hay API key) y CAE a edge-tts si algo
+    falla, para no perder nunca el video del dia."""
+    if TTS_ENGINE == "eleven" and os.environ.get("ELEVENLABS_API_KEY"):
+        try:
+            w = synth_eleven_full(text, out_wav)
+            sys.stderr.write("[tts] voz: ElevenLabs (" +
+                             os.environ.get("ELEVEN_MODEL", "eleven_flash_v2_5") + ")\n")
+            return w
+        except Exception as e:
+            sys.stderr.write("[tts] ElevenLabs fallo (%s); uso edge-tts.\n" % e)
+    return synth_edge_full(text, out_wav)
+
 def synth(text, out_wav):
     if TTS_ENGINE == "edge":
         synth_edge(text, out_wav)
@@ -340,8 +411,8 @@ def build_background(script, total, workdir, spans):
 
 # ---------- Audio ----------
 def build_audio(lines, workdir):
-    # edge: una sola locución continua (fluida) + tiempos de palabra reales
-    if TTS_ENGINE == "edge":
+    # edge/eleven: una sola locución continua (fluida) + tiempos de palabra reales
+    if TTS_ENGINE in ("edge", "eleven"):
         try:
             return _audio_oneshot(lines, workdir)
         except Exception as e:
@@ -351,7 +422,7 @@ def build_audio(lines, workdir):
 def _audio_oneshot(lines, workdir):
     full = os.path.join(workdir, "full.wav")
     text = _tts_join(lines)
-    words = synth_edge_full(text, full)
+    words = synth_full(text, full)
     total = dur_of(full)
     if total <= 0:
         raise RuntimeError("audio vacío")
