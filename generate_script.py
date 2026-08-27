@@ -46,8 +46,8 @@ FORMATOS = [
 SCHEMA_INSTRUCCION = """
 Devuelve UNICAMENTE un JSON valido (sin texto alrededor) con esta forma exacta:
 {
-  "title": "titulo calmado y bonito, max 90 caracteres, puede llevar 1 emoji (luna o estrella) y #shorts",
-  "description": "1-2 frases suaves que inviten a parar un momento. Anade al final: 'Contenido de bienestar, no sustituye ayuda profesional.'",
+  "title": "titulo calmado y bonito, UNICO de la escena de hoy (max 90 caracteres, 1 emoji opcional, #shorts). Nunca generico ni repetido.",
+  "description": "2 frases suaves y DISTINTAS cada dia, sobre la escena concreta de hoy. Anade al final: 'Contenido de bienestar, no sustituye ayuda profesional.'",
   "hashtags": ["Shorts", "relajacion", "calma", "dormir"],  // 3 a 5, sin '#', el primero SIEMPRE 'Shorts'
   "bg": "uno de: blue, purple, teal, green (tonos nocturnos y suaves)",
   "broll": "2-4 palabras EN INGLES de la escena nocturna (ej: 'rain window night')",
@@ -61,8 +61,9 @@ Devuelve UNICAMENTE un JSON valido (sin texto alrededor) con esta forma exacta:
 Reglas del guion (formato 'Un minuto de calma'):
 - Entre 7 y 10 lineas. Cada 'voice' es una frase corta, lenta y sensorial (el video dura 30-45 s).
 - ESTO NO ES UN TUTORIAL: NO expliques, NO des consejos ni datos, NO uses 'sabias que', 'truco' ni 'top 3'. Se trata de CREAR una experiencia que el espectador VIVE, no de contarle un tema.
-- FIRMA DE APERTURA (linea 1, SIEMPRE): empieza con la palabra "Respira." y nombra 'tu minuto de calma'. Ej: "Respira. Este es tu minuto de calma." (puedes variar levemente, pero manten 'Respira' + 'tu minuto de calma').
-- FIRMA DE CIERRE (ultima linea, SIEMPRE): despidete con suavidad invitando a volver manana. Ej: "Buenas noches. Vuelve manana." (puedes variar levemente, pero manten la idea de despedida + volver manana).
+- APERTURA (linea 1): una invitacion a parar, DISTINTA cada dia. Rota entre formulas como "Respira.", "Cierra los ojos.", "Baja el ritmo.", "Para un momento.", "Suelta el dia.", "Afloja los hombros." Reconocible como el canal, pero NUNCA identica a la de ayer.
+- CIERRE (ultima linea): una despedida suave que invite a descansar o volver, tambien VARIADA: "Buenas noches.", "Descansa.", "Nos vemos manana.", "Duerme tranquilo.", "Hasta manana." Nunca la misma de ayer.
+- VARIEDAD OBLIGATORIA: titulo, descripcion, escena, apertura, cierre y frases deben ser CLARAMENTE DISTINTOS a cualquier video anterior. Si se parece a uno de ayer, cambialo entero. La escena concreta de HOY manda: todo gira en torno a ELLA.
 - Habla en segunda persona y en presente ("suelta los hombros", "escucha la lluvia"). Cercano, calido, sin prisa.
 - 'cap' nunca lleva emojis (la fuente no los dibuja). 'voice' escribe los numeros con letras.
 - Espanol de Espana, tono muy suave, pausado y envolvente; frases que respiran, con silencios implicitos.
@@ -149,7 +150,9 @@ def _validate(s):
         hs = ["Shorts"] + [h for h in hs if h.lower() != "shorts"]
     s["hashtags"] = hs[:5]
     assert s.get("title"), "sin titulo"
-    s.setdefault("description", "Un momento de calma en 30 segundos. Contenido de bienestar, no sustituye ayuda profesional.")
+    if not (s.get("description") or "").strip():
+        _first = (s["lines"][0].get("voice", "") if s.get("lines") else "").strip()
+        s["description"] = (_first[:110] or "Tu minuto de calma de hoy.") + " Contenido de bienestar, no sustituye ayuda profesional."
     s["id"] = "ia-" + datetime.date.today().isoformat()
     s.pop("chart", None)
     return s
@@ -175,7 +178,8 @@ def generate():
               + (f"Para forzar variedad, esta noche NO uses estas escenas (elige otra distinta): {evitar}.\n" if evitar else "")
               + f"Trabaja la experiencia con este ESTILO de hoy: {formato}.\n"
               + "El estilo se intercala cada dia; hoy toca EXACTAMENTE el de arriba.\n"
-              + "Manten SIEMPRE la firma de apertura y de cierre. Nada de tutoriales ni consejos.\n"
+              + "Apertura y cierre VARIADOS (no repitas los de ayer). Titulo y descripcion UNICOS de la escena de hoy.\n"
+              + "Nada de tutoriales ni consejos. Que HOY se note claramente distinto a cualquier dia anterior.\n"
               + SCHEMA_INSTRUCCION)
     try:
         raw = _call_gemini(prompt, key)

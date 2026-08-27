@@ -358,16 +358,83 @@ def _groups(nlines, n):
         idx += cnt
     return [g for g in gs if g]
 
+def _falai_clip(prompt, workdir, idx):
+    """Genera UN clip cinematografico con IA (Kling via fal.ai). Devuelve la ruta
+    del mp4 o None. Si falla por lo que sea, devuelve None y el motor usa stock."""
+    key = os.environ.get("FAL_KEY", "").strip()
+    if not key or not prompt:
+        return None
+    import time
+    model = os.environ.get("FAL_MODEL", "fal-ai/kling-video/v2.5-turbo/pro/text-to-video")
+    dur = os.environ.get("FAL_DURATION", "5")
+    style = os.environ.get("FAL_STYLE", "cinematic, slow motion, highly detailed, soft natural light")
+    full = (prompt + ", " + style).strip(", ")
+    try:
+        body = json.dumps({"prompt": full, "duration": str(dur), "aspect_ratio": "9:16"}).encode()
+        req = urllib.request.Request("https://queue.fal.run/" + model, data=body,
+              headers={"Authorization": "Key " + key, "Content-Type": "application/json"})
+        with urllib.request.urlopen(req, timeout=30) as r:
+            sub = json.loads(r.read().decode())
+        status_url = sub.get("status_url"); response_url = sub.get("response_url")
+        if not status_url or not response_url:
+            return None
+        for _ in range(70):                      # espera hasta ~6 min
+            rq = urllib.request.Request(status_url, headers={"Authorization": "Key " + key})
+            with urllib.request.urlopen(rq, timeout=30) as r:
+                st = json.loads(r.read().decode())
+            s = st.get("status")
+            if s == "COMPLETED":
+                break
+            if s in ("FAILED", "ERROR", "CANCELED"):
+                sys.stderr.write(f"[bg] fal.ai estado {s}; uso stock.\n"); return None
+            time.sleep(5)
+        else:
+            sys.stderr.write("[bg] fal.ai tardo demasiado; uso stock.\n"); return None
+        rq = urllib.request.Request(response_url, headers={"Authorization": "Key " + key})
+        with urllib.request.urlopen(rq, timeout=60) as r:
+            res = json.loads(r.read().decode())
+        vid = ((res.get("video") or {}).get("url")
+               or (res.get("output") or {}).get("url")
+               or (res.get("videos", [{}])[0].get("url") if res.get("videos") else None))
+        if not vid:
+            return None
+        dst = os.path.join(workdir, f"ai_{idx}.mp4")
+        rq2 = urllib.request.Request(vid, headers={"User-Agent": "canal-bot/1.0"})
+        with urllib.request.urlopen(rq2, timeout=180) as r, open(dst, "wb") as f:
+            f.write(r.read())
+        if _valid_video(dst):
+            print(f"[bg] clip IA (Kling) para: {prompt[:40]}")
+            return dst
+        return None
+    except Exception as e:
+        sys.stderr.write(f"[bg] fal.ai fallo ({e}); uso stock.\n")
+        return None
+
 def build_background(script, total, workdir, spans):
-    """Fondo dinámico: un clip real por IDEA, con push-in. None si no hay clips."""
+    """Fondo dinámico: un clip por IDEA, con push-in. Usa metraje IA (Kling) para los
+    primeros AI_CLIPS 'hero' si hay FAL_KEY, y stock para el resto. None si no hay clips."""
     srcs = []
     blist = script.get("broll_list")
-    if blist and not os.environ.get("LOCAL_BROLL_DIR") and (
-            os.environ.get("PEXELS_API_KEY") or os.environ.get("PIXABAY_API_KEY")):
-        for q in blist:
-            cs = _clips_for_query(q, 1, workdir)
-            if cs:
-                srcs.append(cs[0])
+    try:
+        ai_max = int(os.environ.get("AI_CLIPS", "0"))
+    except ValueError:
+        ai_max = 0
+    have_stock = bool(os.environ.get("PEXELS_API_KEY") or os.environ.get("PIXABAY_API_KEY"))
+    have_ai = bool(os.environ.get("FAL_KEY"))
+    ai_done = 0
+    if blist and not os.environ.get("LOCAL_BROLL_DIR") and (have_stock or have_ai):
+        for i, q in enumerate(blist):
+            clip = None
+            if have_ai and ai_done < ai_max:
+                clip = _falai_clip(q, workdir, i)
+                if clip:
+                    ai_done += 1
+            if not clip and have_stock:
+                cs = _clips_for_query(q, 1, workdir)
+                if cs:
+                    clip = cs[0]
+            if clip:
+                srcs.append(clip)
     if not srcs:
         srcs = _gather_clips(script, workdir)
     if not srcs:
