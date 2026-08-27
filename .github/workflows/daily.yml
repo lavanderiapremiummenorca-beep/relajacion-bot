@@ -38,7 +38,7 @@ jobs:
           YT_CLIENT_ID: ${{ secrets.YT_CLIENT_ID }}
           YT_CLIENT_SECRET: ${{ secrets.YT_CLIENT_SECRET }}
           YT_REFRESH_TOKEN: ${{ secrets.YT_REFRESH_TOKEN }}
-          YT_PRIVACY: public
+          YT_PRIVACY: private
           YT_CATEGORY: "26"
         run: python upload.py
       - name: Guardar copia en Google Drive (para Repurpose -> TikTok + Instagram)
