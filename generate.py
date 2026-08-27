@@ -599,8 +599,9 @@ def build_video(script, out_path, workdir):
     if bgv:
         inputs = ["-i", bgv]
         # tpad: congela el último fotograma durante la cola (el fondo nunca se queda corto)
-        base_vf = ("eq=brightness=-0.03:saturation=1.18:contrast=1.05,"
-                   "drawbox=0:0:1080:1920:color=black@0.28:t=fill,"
+        base_vf = ("scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,"
+                   "eq=brightness=0.04:saturation=1.2:contrast=1.06,"
+                   "drawbox=0:0:1080:1920:color=black@0.14:t=fill,"
                    f"tpad=stop_mode=clone:stop_duration={TAIL+1.0:.2f},"
                    f"subtitles='{ass_esc}',{vfade},setsar=1")
     else:
