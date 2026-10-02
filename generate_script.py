@@ -1,83 +1,88 @@
 # -*- coding: utf-8 -*-
 """
-Escribe el guion del dia con IA (Gemini) siguiendo PROMPT-MAESTRO.md.
-Se activa solo si existe GEMINI_API_KEY. Si falla algo, devuelve None
-y el sistema usa el banco de guiones (scripts.json) como reserva.
-Devuelve un dict con el mismo formato que usa generate.py.
-
-CLAVE ANTI-REPETICION: cada dia se ASIGNA (no se sugiere) una escena, una
-intencion y una estructura distinta y OBLIGATORIA, rotando de forma
-determinista por fecha+run. Asi dos dias seguidos NUNCA salen iguales,
-y el titulo se construye a partir de la escena/intencion de HOY.
+Cerebro del canal CALMA ("Calma en 30s").
+Gemini ELIGE el tema libre cada dia (dentro del canal). Para que no se repita ni
+derive, se le pasa una PISTA rotatoria distinta cada dia (un area/enfoque), ademas
+de formato, gancho y cierre (todo por rotacion determinista).
+Devuelve el mismo dict que usa generate.py.
 """
 import os, sys, json, datetime, urllib.request
 
 BASE = os.path.dirname(os.path.abspath(__file__))
-MODEL = os.environ.get("GEMINI_MODEL", "").strip()  # vacio = autodetectar modelo valido
+MODEL = os.environ.get("GEMINI_MODEL", "").strip()
 _MODEL_CANDIDATES = [
     "gemini-flash-latest", "gemini-2.5-flash", "gemini-2.0-flash",
     "gemini-2.5-flash-lite", "gemini-2.0-flash-001", "gemini-1.5-flash",
 ]
+
+CANAL_NOMBRE = "CALMA Y RELAJACION"
+HASHTAGS_BASE = ("calma", "relajacion", "respiracion", "bienestar")
+TEMA_GENERICO = "la calma"
+TITULO_FALLBACK = "Un minuto de {base} antes de dormir"
+BG_DEFAULT = "teal"
+BROLL_FALLBACK = "calm lake at dawn with mist over the water, soft pastel light"
+BROLL_EJEMPLOS = ("paisajes amplios y lentos, sin gente o con una figura pequena de espaldas; "
+                  "ej: 'calm lake at dawn with mist over the water, soft pastel light', "
+                  "'rain sliding down a window with warm blurred lights behind', "
+                  "'slow ocean waves on an empty beach at sunset, long shot'")
+TONO = ("suave, pausado y calido, en segunda persona (tu). Espanol de Espana. Frases cortas y "
+        "espaciadas, como si hablaras bajito. Nada de prisa ni de energia alta.")
+REGLA_EXTRA = ("- Bienestar general: NUNCA hables de trastornos, diagnosticos, ansiedad clinica, "
+               "depresion, medicacion ni terapia, y no prometas curar nada. Son ejercicios sencillos "
+               "de calma para el dia a dia.\n"
+               "- Escenas de naturaleza, cielo, agua, habitaciones tranquilas. Sin caras en primer plano.\n"
+               "- Si el tema roza el descanso, habla de rutina y ambiente, nunca de salud.")
+MASTER_FALLBACK = "Eres un guionista de Shorts de calma y relajacion en espanol de Espana."
+
+PISTAS = [
+    ("respiraciones lentas para frenar la cabeza", "calm lake at dawn with mist"),
+    ("soltar la tension del cuerpo (hombros, mandibula)", "soft morning light on an empty room"),
+    ("rutinas suaves antes de dormir", "bedroom window with moonlight and curtains"),
+    ("anclarse al presente con los sentidos", "forest path with sunbeams through trees"),
+    ("sonidos que calman: lluvia, mar, viento", "rain on a window with blurred warm lights"),
+    ("bajar el ritmo en mitad de un dia acelerado", "quiet park bench under a big tree"),
+    ("mananas sin prisa", "steaming cup on a windowsill at sunrise"),
+    ("dejar el movil y descansar la vista", "dark room with a book and a small lamp"),
+    ("el paseo lento como descanso", "empty coastal path at golden hour"),
+    ("la naturaleza que no tiene prisa (rios, cielo)", "slow river flowing between mossy stones"),
+    ("agradecer las cosas pequenas del dia", "warm lamp light in a cosy corner at night"),
+    ("el silencio y la madrugada", "empty street at night with warm streetlights"),
+    ("el peso del cuerpo y el descanso en la cama", "soft bed sheets in dim morning light"),
+    ("aceptar el dia que ha salido", "sunset over a calm field, long shadows"),
+    ("estiramientos muy suaves", "sunlight crossing a simple bedroom floor"),
+    ("el calor de una taza o de una hoguera", "campfire embers glowing in the dark"),
+    ("mirar el cielo y las estrellas", "starry night sky over a still lake"),
+    ("la niebla y la primera luz", "misty valley at sunrise, soft pastel colours"),
+]
+
+FORMATOS = [
+    "EJERCICIO GUIADO: guia paso a paso un micro-ejercicio de calma sobre el tema, en cuatro pasos muy simples.",
+    "TRES RESPIRACIONES: acompana tres respiraciones lentas relacionadas con el tema, contando el ritmo.",
+    "IDEA QUE CALMA: una sola idea sencilla sobre el tema, desarrollada muy despacio.",
+    "ANTES DE DORMIR: una rutina de treinta segundos con el tema para soltar el dia.",
+    "PAUSA DEL DIA: una pausa breve para hacer ahora mismo, con el tema como hilo.",
+]
+
+GANCHOS = [
+    "abre invitando a parar justo ahora, con una frase corta y suave, y promete que en treinta segundos se nota",
+    "abre describiendo con calma la sensacion fisica que va a soltar (hombros, mandibula, pecho)",
+    "abre con una imagen de naturaleza muy concreta y lenta, como si la estuviera viendo",
+    "abre reconociendo el dia acelerado que trae el espectador y ofreciendole media pausa",
+    "abre con una pregunta muy suave sobre como esta respirando ahora mismo",
+]
+
+CTAS = [
+    "Guarda esto para esta noche.",
+    "Cuéntame si has notado la diferencia.",
+    "Repítelo mañana a la misma hora.",
+    "Dime qué te quita el sueño y preparo el próximo.",
+    "Sígueme para tu pausa de cada día.",
+]
+
+POWER = ("calma", "respira", "un minuto", "antes de dormir", "suelta", "para",
+         "despacio", "silencio", "descansa", "pausa", "treinta segundos", "sin prisa")
+
 BGS = ["blue", "green", "orange", "purple", "teal", "red"]
-
-# ---------------------------------------------------------------------------
-# POOLS DE VARIEDAD (se asigna uno de cada por dia, no los elige la IA)
-# Cada escena tiene algo de LUZ visible (vela, lampara, reflejos, luna...),
-# nunca un cielo totalmente negro, para que el fondo se VEA y se distinga.
-# ---------------------------------------------------------------------------
-ESCENAS = [
-    ("la lluvia contra la ventana con una lampara calida encendida dentro", "rainy window warm lamp cozy night"),
-    ("una vela encendida temblando en una habitacion a oscuras",            "candle flame macro dark room"),
-    ("la luna llena reflejada sobre un mar en calma",                       "full moon reflection calm sea night"),
-    ("las brasas de una chimenea encendida de cerca",                       "fireplace embers close up cozy"),
-    ("las luces de la ciudad desenfocadas tras un cristal con lluvia",      "city lights bokeh rain window night"),
-    ("una aurora boreal moviendose sobre un lago",                          "aurora borealis over lake night"),
-    ("la via lactea sobre la silueta de una montana",                      "milky way stars mountain silhouette"),
-    ("una taza humeante junto a la ventana con la primera luz del alba",    "steaming cup window soft morning light"),
-    ("la niebla moviendose entre los arboles con rayos de luz al amanecer", "misty forest morning sun rays"),
-    ("las olas rompiendo despacio con la luz dorada del atardecer",         "ocean waves golden hour slow"),
-    ("la nieve cayendo despacio bajo la luz de una farola",                 "snow falling under streetlight night"),
-    ("un farolillo de papel flotando sobre el agua quieta",                 "floating paper lantern water night"),
-    ("un campo de lavanda meciendose al atardecer",                        "lavender field sunset breeze"),
-    ("la lluvia resbalando por las hojas de un jardin en penumbra",         "rain on green leaves garden dusk"),
-    ("una hoguera pequena en una playa vacia de noche",                    "small beach bonfire night calm"),
-    ("las luces calidas de un tren nocturno atravesando la noche",          "night train warm window lights"),
-    ("un valle cubierto de niebla bajo las primeras luces del dia",         "foggy valley dawn soft light"),
-    ("un muelle de madera sobre un lago en calma al amanecer",              "wooden dock calm lake dawn"),
-    ("la luz de unas velas reflejada en el cristal de una copa",            "candlelight warm bokeh reflection"),
-    ("un cielo con estrellas fugaces sobre las dunas de un desierto",       "shooting stars desert dunes night"),
-]
-
-INTENCIONES = [
-    "soltar el trabajo que hoy no diste por terminado",
-    "dejar de darle vueltas a algo que dijiste hoy",
-    "perdonarte por un dia que no salio como querias",
-    "agradecer una cosa pequena que te ha pasado hoy",
-    "dejar ir una preocupacion que no depende de ti",
-    "despedir el dia sin exigirte nada mas",
-    "reconciliarte con el silencio de la casa",
-    "aflojar el cuerpo poco a poco antes de dormir",
-    "dejar lo de manana para manana",
-    "hacer las paces con el cansancio de hoy",
-    "soltar una conversacion que te quedo dando vueltas",
-    "permitirte no hacer absolutamente nada por un minuto",
-    "dejar que el dia se cierre solo, sin empujar",
-    "quitarte de encima el peso de todo lo pendiente",
-    "volver a tu respiracion y a este momento",
-]
-
-ESTRUCTURAS = [
-    "respiracion guiada real: dirige una respiracion (4-7-8 o exhalacion larga) contando los tiempos con mucha calma",
-    "sleep-story: un micro-relato en segunda persona DENTRO de la escena, que lleva poco a poco al sueno",
-    "escena sensorial: describe la escena de HOY con los cinco sentidos y guia al cuerpo a soltarse en ella",
-    "reflexion suave para soltar: una idea calmada sobre parar y permitirte descansar, sin dar consejos ni datos",
-]
-
-APERTURAS = ["Respira.", "Cierra los ojos.", "Baja el ritmo.", "Para un momento.",
-             "Suelta el dia.", "Afloja los hombros.", "Quedate aqui.", "Respira hondo.",
-             "Deja de correr.", "Suelta el aire."]
-CIERRES  = ["Buenas noches.", "Descansa.", "Nos vemos manana.", "Duerme tranquilo.",
-            "Hasta manana.", "Que descanses.", "Cierra los ojos.", "Ya puedes soltar."]
 
 
 def _run_seed():
@@ -87,7 +92,6 @@ def _run_seed():
         return 0
 
 def _daykey():
-    # cambia cada dia (fecha) y tambien en cada run manual (run number)
     return datetime.date.today().toordinal() + _run_seed()
 
 def _rot(lst, stride):
@@ -100,11 +104,8 @@ def _list_models(key):
                f"?key={key}&pageSize=200")
         with urllib.request.urlopen(url, timeout=30) as r:
             data = json.loads(r.read().decode())
-        out = []
-        for m in data.get("models", []):
-            if "generateContent" in (m.get("supportedGenerationMethods") or []):
-                out.append(m.get("name", "").replace("models/", ""))
-        return out
+        return [m.get("name", "").replace("models/", "") for m in data.get("models", [])
+                if "generateContent" in (m.get("supportedGenerationMethods") or [])]
     except Exception:
         return []
 
@@ -116,8 +117,16 @@ def _model_order(key):
         if m not in order:
             order.append(m)
     disc = _list_models(key)
+    # Prioriza Gemini 'flash', luego otros Gemini, luego el resto.
+    # Los 'gemma' (no dan JSON fiable) van al final.
     for m in disc:
-        if "flash" in m and m not in order:
+        if "gemini" in m and "flash" in m and m not in order:
+            order.append(m)
+    for m in disc:
+        if "gemini" in m and m not in order:
+            order.append(m)
+    for m in disc:
+        if "gemma" not in m and m not in order:
             order.append(m)
     for m in disc:
         if m not in order:
@@ -136,98 +145,164 @@ def _post_generate(model, prompt, key):
         data = json.loads(r.read().decode())
     return data["candidates"][0]["content"]["parts"][0]["text"]
 
-def _call_gemini(prompt, key):
+def _extract_json(txt):
+    """Saca un JSON valido aunque el modelo lo envuelva en ```json ... ``` o texto."""
+    if not txt:
+        return None
+    t = txt.strip()
+    if t.startswith("```"):
+        t = t.strip("`")
+        if t[:4].lower() == "json":
+            t = t[4:]
+    i, j = t.find("{"), t.rfind("}")
+    if i != -1 and j != -1 and j > i:
+        t = t[i:j + 1]
+    try:
+        return json.loads(t)
+    except Exception:
+        return None
+
+def _gen_json(prompt, key):
+    """Prueba modelos hasta obtener un JSON valido. Salta los que fallen o
+    devuelvan basura (p.ej. gemma con respuesta vacia). None si ninguno lo da."""
     last = None
     for model in _model_order(key):
         try:
             txt = _post_generate(model, prompt, key)
-            sys.stderr.write(f"[ai] modelo usado: {model}\n")
-            return txt
         except Exception as e:
             last = e
-    raise RuntimeError(f"ningun modelo Gemini respondio: {last}")
+            continue
+        obj = _extract_json(txt)
+        if isinstance(obj, dict) and obj.get("lines"):
+            sys.stderr.write(f"[ai] modelo usado: {model}\n")
+            return obj
+        sys.stderr.write(f"[ai] {model} no dio JSON valido; pruebo otro.\n")
+    if last:
+        sys.stderr.write(f"[ai] ultimo error: {last}\n")
+    return None
 
 
-_TITULOS_PROHIBIDOS = ("suelta el peso del dia", "suelta el peso del día",
-                       "un minuto de calma", "tu momento de calma",
-                       "respira y calmate", "respira asi")
+# Red de seguridad: si el modelo escribe sin enes ni tildes, se restauran las
+# palabras mas comunes (el subtitulo salia como "MANANA" en vez de "MANANA" con ene).
+_ORTO = {
+    "manana": "mañana", "ano": "año", "anos": "años", "nino": "niño", "ninos": "niños",
+    "nina": "niña", "ninas": "niñas", "senor": "señor", "senora": "señora",
+    "espanol": "español", "espanola": "española", "Espana": "España", "espana": "España",
+    "pequeno": "pequeño", "pequena": "pequeña", "sueno": "sueño", "suenos": "sueños",
+    "bano": "baño", "banos": "baños", "compania": "compañía", "montana": "montaña",
+    "manana,": "mañana,", "ensenar": "enseñar", "ensena": "enseña", "diseno": "diseño",
+    "extrano": "extraño", "dano": "daño", "danos": "daños", "puno": "puño",
+    "canon": "cañón", "otono": "otoño", "sueno.": "sueño.", "duena": "dueña",
+    "dueno": "dueño", "acompanar": "acompañar", "manana.": "mañana.",
+}
 
-def _validate(s, escena_es="", intencion="", broll_en=""):
-    assert isinstance(s.get("lines"), list) and 6 <= len(s["lines"]) <= 16, "lineas fuera de rango"
+def _fix_orto(txt):
+    if not isinstance(txt, str) or not txt:
+        return txt
+    out = []
+    for w in txt.split(" "):
+        low = w.lower()
+        rep = _ORTO.get(low) or _ORTO.get(w)
+        if rep:
+            if w[:1].isupper():
+                rep = rep[:1].upper() + rep[1:]
+            out.append(rep)
+        else:
+            out.append(w)
+    return " ".join(out)
+
+
+def _validate(s, tema="", cta="", broll_en=""):
+    assert isinstance(s.get("lines"), list) and 4 <= len(s["lines"]) <= 12, "lineas fuera de rango"
     for ln in s["lines"]:
         assert ln.get("voice"), "linea sin voz"
         ln.setdefault("cap", "")
-    s.setdefault("bg", "blue")
+        ln["voice"] = _fix_orto(ln["voice"])
+        ln["cap"] = _fix_orto(ln["cap"])
+    s.setdefault("bg", BG_DEFAULT)
     if s["bg"] not in BGS:
-        s["bg"] = "blue"
+        s["bg"] = BG_DEFAULT
     hs = [h.lstrip("#") for h in s.get("hashtags", []) if h.strip()]
     if not hs or hs[0].lower() != "shorts":
         hs = ["Shorts"] + [h for h in hs if h.lower() != "shorts"]
-    s["hashtags"] = hs[:5]
+    s["hashtags"] = (hs + list(HASHTAGS_BASE))[:6]
 
-    # --- TITULO: unico de hoy y NUNCA el generico repetido ---
-    t = (s.get("title") or "").strip()
+    # TITULO: obliga a que lleve un numero o una palabra potente
+    t = _fix_orto((s.get("title") or "").strip())
     low = t.lower()
-    generico = (not t) or any(p in low for p in _TITULOS_PROHIBIDOS)
-    if generico:
-        base = (escena_es or "esta noche").strip()
-        base = base[0].upper() + base[1:]
-        if len(base) > 66:
-            base = base[:66].rsplit(" ", 1)[0]
-        s["title"] = f"{base} 🌙 #shorts"
-    elif "#short" not in low:
-        s["title"] = t + " #shorts"
+    tiene_num = any(c.isdigit() for c in t) or any(w in low for w in
+        ("tres", "cuatro", "cinco", "dos"))
+    tiene_power = any(p in low for p in POWER)
+    if not t:
+        base = (tema or TEMA_GENERICO).strip()
+        t = TITULO_FALLBACK.format(base=base)
+    if "#short" not in low:
+        t = t + " #shorts"
+    s["title"] = t
 
-    # --- DESCRIPCION: derivada de la escena/intencion si viene vacia ---
+    # CTA obligatorio como ultima linea (cebo de comentarios)
+    if cta:
+        last = (s["lines"][-1].get("voice", "") or "").lower()
+        if "coment" not in last and "abajo" not in last and "sigue" not in last and "guarda" not in last:
+            s["lines"].append({"voice": cta, "cap": "comenta abajo"})
+
     if not (s.get("description") or "").strip():
-        d = f"Un minuto para {intencion}." if intencion else "Tu minuto de calma de hoy."
-        s["description"] = d + " Contenido de bienestar, no sustituye ayuda profesional."
+        s["description"] = (t.replace(" #shorts", "") + ". " + (cta or "")).strip()
+    s["description"] = _fix_orto(s["description"]).rstrip()
 
-    # --- BROLL: garantiza la escena de HOY como primer plano ---
+    # BROLL como pista de imagen
     bl = s.get("broll_list")
     if not isinstance(bl, list) or not bl:
-        bl = []
-    if broll_en:
-        bl = [broll_en] + [b for b in bl if isinstance(b, str) and b.strip()]
-    bl = [b.strip() for b in bl if isinstance(b, str) and b.strip()][:4]
+        bl = [broll_en] if broll_en else []
+    bl = [b.strip() for b in bl if isinstance(b, str) and b.strip()][:12]
     if bl:
         s["broll_list"] = bl
         s["broll"] = bl[0]
     elif broll_en:
         s["broll_list"] = [broll_en]; s["broll"] = broll_en
 
+    try:
+        s["video_idx"] = int(s.get("video_idx", -1))
+    except (TypeError, ValueError):
+        s["video_idx"] = -1
     s["ai_disclosure"] = False
     s["id"] = "ia-" + datetime.date.today().isoformat()
     s.pop("chart", None)
     return s
 
 
-def _schema(escena_es, intencion, estructura, broll_en, apertura, cierre):
+def _schema(broll_en, formato, gancho, cta, pista):
+    hs = '", "'.join(["Shorts"] + list(HASHTAGS_BASE))
     return f"""
 Devuelve UNICAMENTE un JSON valido (sin texto alrededor) con esta forma exacta:
 {{
-  "title": "titulo calmado y bonito, UNICO de la escena de HOY. Construyelo a partir de la escena y la intencion de hoy. Max 80 caracteres, 1 emoji opcional, incluye #shorts. PROHIBIDO usar 'Suelta el peso del dia', 'Un minuto de calma' o cualquier titulo generico de otros dias.",
-  "description": "2 frases suaves y DISTINTAS, sobre la escena de HOY y la intencion de HOY. Termina con: 'Contenido de bienestar, no sustituye ayuda profesional.'",
-  "hashtags": ["Shorts", "relajacion", "calma", "dormir"],
-  "bg": "uno de: blue, purple, teal, green (tonos nocturnos suaves)",
+  "title": "titulo IMPACTANTE con un NUMERO y/o una palabra potente. Sobre el tema de HOY. Max 80 caracteres, 1 emoji opcional, incluye #shorts.",
+  "description": "1-2 frases con gancho + hashtags. Termina invitando a comentar.",
+  "hashtags": ["{hs}"],
+  "bg": "uno de: orange, red, purple, teal",
   "broll": "{broll_en}",
-  "broll_list": ["{broll_en}", "y 2-3 planos EN INGLES mas de la MISMA escena o afines, todos CON algo de luz visible, nunca un cielo totalmente negro"],
+  "broll_list": ["una ESCENA para RECREAR con IA por CADA linea, EN INGLES, concreta, con ACCION, lugar y luz ({BROLL_EJEMPLOS}). En el MISMO orden que 'lines'. UNA escena por CADA linea (mismo numero de escenas que de lineas), y cada escena debe mostrar EXACTAMENTE lo que se narra en esa linea. Describe una imagen VIVA, como un plano de cine."],
   "ai_disclosure": false,
+  "video_idx": "indice 0-based de la ESCENA de broll_list que MAS ganaria con MOVIMIENTO de video real (la mas dinamica). Devuelve -1 si ninguna lo necesita. Como MUCHO una.",
   "lines": [
-    {{"voice": "frase corta, lenta y sensorial (numeros en palabras)", "cap": "subtitulo MUY corto (2-4 palabras, sin emojis)"}}
+    {{"voice": "frase que se narra (numeros en palabras)", "cap": "subtitulo corto en pantalla (2-4 palabras)"}}
   ]
 }}
-GUION DE HOY - 'Un minuto de calma' (obligatorio, distinto a cualquier dia anterior):
-- ESCENA DE HOY (usala como corazon del video): {escena_es}.
-- INTENCION DE HOY (de que va la calma esta noche): {intencion}.
-- ESTRUCTURA DE HOY: {estructura}.
-- Entre 7 y 10 lineas. Cada 'voice' es una frase corta y sensorial (video de 30-45 s).
-- NO es un tutorial: NO expliques, NO des consejos ni datos, NO uses 'sabias que', 'truco' ni 'top'. CREA una experiencia que se VIVE.
-- APERTURA (linea 1): empieza con algo tipo "{apertura}" (una invitacion a parar, breve).
-- CIERRE (ultima linea): despidete con algo tipo "{cierre}".
-- Todo gira en torno a la ESCENA e INTENCION de HOY. El titulo y la descripcion deben dejar claro que HOY es distinto a cualquier otro dia.
-- Segunda persona y presente ("escucha la lluvia", "suelta los hombros"). Espanol de Espana, muy suave y pausado.
-- 'cap' sin emojis. 'voice' escribe los numeros con letras ('cuatro', no '4').
+GUION DE HOY (canal de {CANAL_NOMBRE}, formato viral, DISTINTO a cualquier dia anterior):
+- ELIGE TU EL TEMA DE HOY: libre, dentro del canal de {CANAL_NOMBRE}. Concreto y con gancho. Que sea DISTINTO a lo mas tipico y a lo de dias anteriores; NO te repitas ni tires siempre por lo mismo.
+- PISTA PARA VARIAR HOY (orientate hacia esta zona para no caer siempre en lo mismo, pero TU decides el tema y el enfoque exactos, y puedes afinar dentro de ella): {pista}.
+- FORMATO DE HOY: {formato}
+- LINEA 1 = GANCHO (primer segundo). Tecnica de hoy: {gancho}. PROHIBIDO usar frases-comodin genericas ("el noventa por ciento no sabe esto", "prepara la cabeza", "esto te va a explotar la mente", "agarrate"): NO enganchan, suenan a bot. El gancho debe ser CONCRETO, especifico y util, sacado de lo MAS fuerte del tema de hoy, y ABRIR UN BUCLE (promete algo aun mejor que todavia no cuentas). Nada de empezar con "En [tema]...".
+- Luego el contenido, cada parte concreta y VERAZ (nada inventado). De menos a mas: lo mejor al final.
+- Encadena con TENSION ("pero lo siguiente es mejor", "y aun hay mas"), NO con "primero, segundo, tercero" a secas.
+- ORTOGRAFIA: espanol de Espana IMPECABLE, con TILDES y con la letra ENE (mañana, año, España, sueño, pequeño). NUNCA sustituyas la ñ por n. Cuidado con articulos y concordancia. Frases cortas y en presente.
+- ULTIMA LINEA = CIERRE que invita a participar: algo tipo "{cta}".
+- Entre 5 y 8 lineas en total. Frases cortas y con energia (ritmo de Short, 30-45 s).
+- Tono: {TONO}
+- 'cap' sin emojis. 'voice' escribe los numeros con letras.
+- SEGURIDAD (obligatorio): las escenas deben ser APTAS PARA YOUTUBE Y PUBLICIDAD. Con fuerza, pero SIN sangre, heridas, cuerpos mutilados, desnudos ni violencia explicita. Nada de caras de personas reales famosas.
+{REGLA_EXTRA}
+- CRITICO: cada escena de 'broll_list' debe MOSTRAR EXACTAMENTE lo que se narra en esa parte, EN EL MISMO ORDEN. NADA generico ni palabras sueltas: escena de cine con accion + lugar + luz, EN INGLES.
 """
 
 
@@ -238,24 +313,25 @@ def generate():
     try:
         master = open(os.path.join(BASE, "PROMPT-MAESTRO.md"), encoding="utf-8").read()
     except Exception:
-        master = "Eres un creador experto de Shorts de relajacion y sueno en espanol de Espana."
+        master = MASTER_FALLBACK
 
-    escena_es, broll_en = _rot(ESCENAS, 1)
-    intencion = _rot(INTENCIONES, 7)
-    estructura = _rot(ESTRUCTURAS, 3)
-    apertura = _rot(APERTURAS, 5)
-    cierre = _rot(CIERRES, 11)
+    pista, broll_en = _rot(PISTAS, 1)
+    tema = ""  # el tema lo ELIGE Gemini; 'pista' solo orienta para no repetir
+    formato = _rot(FORMATOS, 3)
+    gancho = _rot(GANCHOS, 5)
+    cta = _rot(CTAS, 7)
     hoy = datetime.date.today().isoformat()
 
     prompt = (master
               + f"\n\n---\nTAREA DE HOY ({hoy}):\n"
-              + "Crea la experiencia de calma de esta noche siguiendo EXACTAMENTE la escena, "
-                "la intencion y la estructura que se te asignan abajo. No elijas otra escena.\n"
-              + _schema(escena_es, intencion, estructura, broll_en, apertura, cierre))
+              + f"Crea un Short de {CANAL_NOMBRE} con el formato viral de abajo. ELIGE tu el tema (libre, del canal, sin repetir), "
+                "y sigue EXACTAMENTE el formato, el gancho y el cierre que se te asignan. Todo debe ser VERAZ.\n"
+              + _schema(broll_en, formato, gancho, cta, pista))
     try:
-        raw = _call_gemini(prompt, key)
-        s = json.loads(raw)
-        s = _validate(s, escena_es=escena_es, intencion=intencion, broll_en=broll_en)
+        s = _gen_json(prompt, key)
+        if not s:
+            raise RuntimeError("ningun modelo dio JSON valido")
+        s = _validate(s, tema=tema, cta=cta, broll_en=broll_en)
         return s
     except Exception as e:
         sys.stderr.write(f"[ai] no se pudo generar con IA ({e}); se usara el banco.\n")
