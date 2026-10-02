@@ -1,8 +1,8 @@
 name: Publicar Short diario
 on:
   schedule:
-    - cron: "51 20 * * *"     # ~22:51 Espana (UTC). Cambia hora/minuto si quieres, pero evita el minuto :00.
-  workflow_dispatch:          # boton para lanzarlo a mano cuando quieras
+    - cron: "51 20 * * *"
+  workflow_dispatch:
 permissions:
   contents: read
 jobs:
@@ -24,7 +24,8 @@ jobs:
           ELEVEN_VOICE_ID: "1CeqBeXMOqCleeQjfYfO"
           ELEVEN_MODEL: eleven_flash_v2_5
           FAL_KEY: ${{ secrets.FAL_KEY }}
-          AI_CLIPS: "2"
+          VISUAL_MODE: photos
+          AI_HERO_CLIPS: "1"
           VOICE_VOL: "0.8"
           EDGE_VOICE: es-ES-ElviraNeural
           EDGE_RATE: "-8%"
